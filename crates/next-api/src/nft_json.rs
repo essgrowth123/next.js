@@ -103,6 +103,7 @@ async fn apply_includes(
     ident_folder: &FileSystemPath,
 ) -> Result<BTreeSet<RcStr>> {
     // Read files matching the glob pattern from the project root
+    // This result itself has random order, but the BTreeSet will ensure a deterministic ordering.
     let glob_result = project_root_path.read_glob(glob).await?;
 
     // Walk the full glob_result using an explicit stack to avoid async recursion overheads.
@@ -112,13 +113,13 @@ async fn apply_includes(
     while let Some(glob_result) = stack.pop_back() {
         // Process direct results (files and directories at this level)
         for entry in glob_result.results.values() {
-            let DirectoryEntry::File(file_path) = entry else {
+            let (DirectoryEntry::File(file_path) | DirectoryEntry::Symlink(file_path)) = entry
+            else {
                 continue;
             };
 
-            let file_path_ref = file_path;
             // Convert to relative path from ident_folder to the file
-            if let Some(relative_path) = ident_folder.get_relative_path_to(file_path_ref) {
+            if let Some(relative_path) = ident_folder.get_relative_path_to(file_path) {
                 result.insert(relative_path);
             }
         }
