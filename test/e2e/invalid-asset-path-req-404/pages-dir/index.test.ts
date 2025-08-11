@@ -24,7 +24,7 @@ describe('pages-dir - invalid-asset-path-req-404', () => {
   })
 
   it('should return 404 with plain text when fetching invalid asset path', async () => {
-    const res = await next.fetch('/_next/static/_invalid-asset-path')
+    const res = await next.fetch('/_next/static/css/non-existent.css')
     expect(res.status).toBe(404)
     const text = await res.text()
     expect(text).toBe('Not Found')
