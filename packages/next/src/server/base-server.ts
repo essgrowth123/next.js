@@ -2091,15 +2091,6 @@ export default abstract class Server<
 
     const prerenderManifest = this.getPrerenderManifest()
 
-    // Instead of returning an HTML 404 page, return plain text 404
-    // for static assets to avoid confusing search engine bots.
-    // Use includes() to avoid issues with basePath and assetPrefix
-    if (is404Page && req.url.includes('/_next/static/')) {
-      res.statusCode = 404
-      res.body('Not Found').send()
-      return null
-    }
-
     if (
       hasFallback ||
       staticPaths?.includes(resolvedUrlPathname) ||
@@ -2751,7 +2742,7 @@ export default abstract class Server<
         body: RenderResult.EMPTY,
       }
     }
-    const { res, query } = ctx
+    const { req, res, query } = ctx
 
     try {
       let result: null | FindComponentsResult = null
@@ -2760,6 +2751,16 @@ export default abstract class Server<
       let using404Page = false
 
       if (is404) {
+        // Instead of returning an HTML 404 page, return plain text 404
+        // for static assets to avoid confusing search engine bots.
+        // Use includes() to avoid issues with basePath and assetPrefix
+        if (req.url.includes('/_next/static/')) {
+          res.statusCode = 404
+          res.setHeader('Content-Type', 'text/plain')
+          res.body('Not Found').send()
+          return null
+        }
+
         if (this.enabledDirectories.app) {
           // Use the not-found entry in app directory
           result = await this.findPageComponents({
