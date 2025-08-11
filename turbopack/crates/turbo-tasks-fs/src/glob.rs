@@ -241,6 +241,8 @@ mod tests {
     #[case::globstar_in_dir_partial("dir/**/sub/file.js", "dir/a/b")]
     #[case::globstar_in_dir_partial("dir/**/sub/file.js", "dir/a/b/sub")]
     #[case::globstar_in_dir_partial("dir/**/sub/file.js", "dir/a/b/sub/file.js")]
+    #[case::outside("../dir/*.js", "..")]
+    #[case::outside("../dir/*.js", "../dir")]
     fn glob_can_match_directory(#[case] glob: &str, #[case] path: &str) {
         let glob = Glob::parse(glob).unwrap();
 

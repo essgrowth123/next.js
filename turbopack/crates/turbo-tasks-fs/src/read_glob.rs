@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use futures::try_join;
 use rustc_hash::FxHashMap;
-use turbo_rcstr::RcStr;
+use turbo_rcstr::{RcStr, rcstr};
 use turbo_tasks::{Completion, ResolvedVc, TryJoinIterExt, Vc};
 
 use crate::{
@@ -64,6 +64,27 @@ async fn read_glob_internal(
         }
         anyhow::Ok(())
     };
+
+    // If there is a parent folder, we need to check if something further up can be matched by the
+    // glob. To prevent an infinite loop where we go up and down repeatedly, only do this if the
+    // prefix has the pattern `../../..`.
+    if let Ok(parent) = directory.join("..")
+        && (prefix.is_empty() || prefix.split("/").all(|s| s == ".."))
+    {
+        let entry_path: RcStr = if prefix.is_empty() {
+            rcstr!("..")
+        } else {
+            format!("{prefix}/..").into()
+        };
+        if glob_value.can_match_in_directory(&entry_path) {
+            result.inner.insert(
+                rcstr!(".."),
+                read_glob_inner(entry_path, parent, glob)
+                    .to_resolved()
+                    .await?,
+            );
+        }
+    }
 
     match &*dir {
         DirectoryContent::Entries(entries) => {
@@ -296,6 +317,64 @@ pub mod tests {
             );
 
             assert_eq!(inner.inner.len(), 0);
+
+            anyhow::Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn read_glob_outside_start() {
+        crate::register();
+        let scratch = tempfile::tempdir().unwrap();
+        {
+            // foo/foo.js
+            // bar/bar.js
+            let path = scratch.path();
+            let foo = path.join("foo");
+            create_dir(&foo).unwrap();
+            File::create_new(foo.join("foo.js"))
+                .unwrap()
+                .write_all(b"foo.js")
+                .unwrap();
+
+            let bar = path.join("bar");
+            create_dir(&bar).unwrap();
+            File::create_new(bar.join("bar.js"))
+                .unwrap()
+                .write_all(b"bar.js")
+                .unwrap();
+        }
+        let tt = turbo_tasks::TurboTasks::new(TurboTasksBackend::new(
+            BackendOptions::default(),
+            noop_backing_storage(),
+        ));
+        let path: RcStr = scratch.path().to_str().unwrap().into();
+        tt.run_once(async {
+            let fs = DiskFileSystem::new(rcstr!("temp"), path);
+            let root = fs.root().await?;
+            let read_dir = root
+                .join("foo")?
+                .read_glob(Glob::new(rcstr!("../bar/*")))
+                .await
+                .unwrap();
+            assert_eq!(read_dir.results.len(), 0);
+            assert_eq!(read_dir.inner.len(), 1);
+
+            let inner_parent = &*read_dir.inner.get("..").unwrap().await?;
+            assert_eq!(inner_parent.results.len(), 0);
+            assert_eq!(inner_parent.inner.len(), 1);
+
+            let inner_parent_bar = &*inner_parent.inner.get("bar").unwrap().await?;
+            assert_eq!(
+                inner_parent_bar.results,
+                HashMap::from_iter([(
+                    "bar.js".into(),
+                    DirectoryEntry::File(root.join("bar/bar.js")?),
+                )])
+            );
+            assert_eq!(inner_parent_bar.inner.len(), 0);
 
             anyhow::Ok(())
         })
