@@ -69,7 +69,7 @@ async fn read_glob_internal(
     // glob. To prevent an infinite loop where we go up and down repeatedly, only do this if the
     // prefix has the pattern `../../..`.
     if let Ok(parent) = directory.join("..")
-        && (prefix.is_empty() || prefix.split("/").all(|s| s == ".."))
+        && (prefix.is_empty() || prefix == ".." || prefix.ends_with("/.."))
     {
         let entry_path: RcStr = if prefix.is_empty() {
             rcstr!("..")
